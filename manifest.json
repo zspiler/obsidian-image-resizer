@@ -1,6 +1,6 @@
 {
 	"id": "obsidian-image-resizer",
-	"name": "Obsidian Code Formatter",
+	"name": "Obsidian image resizer",
 	"version": "1.0.0",
 	"minAppVersion": "0.15.0",
 	"description": "Obsidian plugin that enables formatting of code blocks for various languages.",
