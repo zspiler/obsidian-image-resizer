@@ -15,15 +15,26 @@ export default class MyPlugin extends Plugin {
 		const imageClickPlugin = ViewPlugin.fromClass(class {
 			view: EditorView;
 
-			ResizeData: ResizeData | null;
+			resizeData: ResizeData | null;
 
 			constructor(view: EditorView) {
 				this.view = view;
-				this.ResizeData = null;
+				this.resizeData = null;
 
 				view.dom.addEventListener('mousedown', this.handleMouseDown.bind(this));
 				view.dom.addEventListener('mousemove', this.handleMouseMove.bind(this));
 				view.dom.addEventListener('mouseup', this.handleMouseUp.bind(this));
+			}
+
+			findImageForResizing(event: MouseEvent): HTMLImageElement | undefined {
+				const imageElements = this.view.contentDOM.querySelectorAll('.image-embed img');
+				return Array.from(imageElements).find(image => {
+					const imageRect = image.getBoundingClientRect();
+					return imageRect.right > event.clientX
+						&& event.clientX > imageRect.right - imageEdgeMargin
+						&& event.clientY > imageRect.top
+						&& event.clientY < imageRect.bottom;
+				}) as HTMLImageElement | undefined
 			}
 
 			handleMouseDown = (event: MouseEvent) => {
@@ -35,56 +46,61 @@ export default class MyPlugin extends Plugin {
 					return
 				}
 
-				const imageElements = this.view.contentDOM.querySelectorAll('.image-embed img');
+				const findImageForResizing = this.findImageForResizing(event);
 
-				const clickedImage = Array.from(imageElements).find(image => {
-					const imageimageRect = image.getBoundingClientRect();
-					return event.clientX > imageimageRect.right - imageEdgeMargin && event.clientY > imageimageRect.top && event.clientY < imageimageRect.bottom;
-				}) as HTMLImageElement | undefined
-
-				if (clickedImage) {
-					const imageimageRect = clickedImage.getBoundingClientRect();
-					createHandleBar(clickedImage);
-					this.ResizeData = {
+				if (findImageForResizing) {
+					const imageRect = findImageForResizing.getBoundingClientRect();
+					createHandleBar(findImageForResizing);
+					this.resizeData = {
 						position: pos,
-						newWidth: Math.floor(imageimageRect.width),
-						element: clickedImage,
+						newWidth: Math.floor(imageRect.width),
+						element: findImageForResizing,
 					};
 				}
 			};
 
 			handleMouseMove(event: MouseEvent) {
-				if (this.ResizeData) {
-					const imageimageRect = this.ResizeData.element.getBoundingClientRect();
-					const newWidth = Math.max(0, Math.floor(event.clientX - imageimageRect.left));
+				if (this.resizeData) {
+					const imageRect = this.resizeData.element.getBoundingClientRect();
+					const newWidth = Math.max(0, Math.floor(event.clientX - imageRect.left));
 
-					this.ResizeData.newWidth = newWidth;
-					this.ResizeData.element.style.width = `${newWidth}px`;
-					updateHandleBar(this.ResizeData.element);
+					this.resizeData.newWidth = newWidth;
+					this.resizeData.element.style.width = `${newWidth}px`;
+
+					setCursorToResize()
+
+					updateHandleBar(this.resizeData.element);
 				} else {
-					// TODO hover state?
+					const hoveredImageForResizing = this.findImageForResizing(event);
+					if (hoveredImageForResizing) {
+						setCursorToResize()
+						createHandleBar(hoveredImageForResizing);
+					} else {
+						resetCursor()
+						removeHandleBar();
+					}
 				}
 			}
 
 			handleMouseUp() {
-				if (!this.ResizeData) {
+				if (!this.resizeData) {
 					return
 				}
 
 				let markdownLine;
 				try {
-					markdownLine = this.view.state.doc.lineAt(this.ResizeData.position) // NOTE when image resized to small size, throws range error?	
+					markdownLine = this.view.state.doc.lineAt(this.resizeData.position) // NOTE when image resized to small size, throws range error?	
 				} catch (error) {
 					console.error('Error resizing image', error);
-					this.ResizeData = null;
+					this.resizeData = null;
 					return
 				}
 
 				const markdown = markdownLine.text;
 				if (isImageMarkdown(markdown)) {
-					const newMarkdown = replaceWidthInImageMarkdown(markdown, this.ResizeData.newWidth);
-					const start = this.view.state.doc.lineAt(this.ResizeData.position).from;
-					const end = this.view.state.doc.lineAt(this.ResizeData.position).to;
+					const newMarkdown = replaceWidthInImageMarkdown(markdown, this.resizeData.newWidth);
+					const start = this.view.state.doc.lineAt(this.resizeData.position).from;
+					const end = this.view.state.doc.lineAt(this.resizeData.position).to;
 
 					this.view.dispatch({
 						changes: { from: start, to: end, insert: newMarkdown }
@@ -93,7 +109,8 @@ export default class MyPlugin extends Plugin {
 					console.error(`Selected markdown ${markdown} is not an image`);
 				}
 
-				this.ResizeData = null;
+				document.body.style.cursor = "auto";
+				this.resizeData = null;
 				removeHandleBar();
 			}
 
@@ -147,6 +164,13 @@ function removeHandleBar() {
 	}
 }
 
+function setCursorToResize() {
+	document.body.style.cursor = "ew-resize";
+}
+
+function resetCursor() {
+	document.body.style.cursor = "auto";
+}
 
 function replaceWidthInImageMarkdown(markdown: string, width: number): string {
 	// Regular expression to match the image syntax
