@@ -1,6 +1,6 @@
 import { Plugin } from 'obsidian';
 import { EditorView, ViewPlugin } from '@codemirror/view';
-import { isImageMarkdown, replaceWidthInImageMarkdown } from './utils';
+import { isImageWikilink, replaceWidthInImageWikilink } from './utils';
 
 const imageEdgeMargin = 50;
 
@@ -8,6 +8,7 @@ type ResizeData = {
 	element: HTMLImageElement;
 	position: number;
 	newWidth: number;
+	markdown: string;
 };
 
 export default class MyPlugin extends Plugin {
@@ -45,26 +46,45 @@ export default class MyPlugin extends Plugin {
 				}) as HTMLImageElement | undefined
 			}
 
+			findMarkdownAtPosition(pos: number): string | null {
+				let line;
+				try {
+					line = this.view.state.doc.lineAt(pos) // NOTE when image resized to small size, throws range error?	
+					return line.text;
+				} catch (error) {
+					console.error(`Error getting markdown at position ${pos}: `, error);
+					return null
+				}
+			}
+
 			handleMouseDown = (event: MouseEvent) => {
 				event.preventDefault()
 				event.stopPropagation();
 
-				const pos = this.view.posAtCoords({ x: event.clientX, y: event.clientY });
+				const pos = this.view.posAtCoords({ x: event.clientX, y: event.clientY }, false);
 				if (!pos) {
 					return
 				}
 
-				const findImageForResizing = this.findImageForResizing(event);
 
-				if (findImageForResizing) {
-					const imageRect = findImageForResizing.getBoundingClientRect();
-					createHandleBar(findImageForResizing);
-					this.resizeData = {
-						position: pos,
-						newWidth: Math.floor(imageRect.width),
-						element: findImageForResizing,
-					};
+				const findImageForResizing = this.findImageForResizing(event);
+				if (!findImageForResizing) {
+					return
 				}
+
+				const markdown = this.findMarkdownAtPosition(pos);
+				if (!markdown || !isImageWikilink(markdown)) {
+					return
+				}
+
+				const imageRect = findImageForResizing.getBoundingClientRect();
+				createHandleBar(findImageForResizing);
+				this.resizeData = {
+					position: pos,
+					newWidth: Math.floor(imageRect.width),
+					element: findImageForResizing,
+					markdown,
+				};
 			};
 
 			handleMouseMove(event: MouseEvent) {
@@ -95,30 +115,13 @@ export default class MyPlugin extends Plugin {
 					return
 				}
 
-				let markdownLine;
-				try {
-					markdownLine = this.view.state.doc.lineAt(this.resizeData.position) // NOTE when image resized to small size, throws range error?	
-				} catch (error) {
-					console.error('Error resizing image', error);
-					this.resizeData = null;
-					return
-				}
+				const newMarkdown = replaceWidthInImageWikilink(this.resizeData.markdown, this.resizeData.newWidth);
+				const start = this.view.state.doc.lineAt(this.resizeData.position).from;
+				const end = this.view.state.doc.lineAt(this.resizeData.position).to;
 
-				const markdown = markdownLine.text;
-
-				if (isImageMarkdown(markdown)) {
-					const newMarkdown = replaceWidthInImageMarkdown(markdown, this.resizeData.newWidth);
-					const start = this.view.state.doc.lineAt(this.resizeData.position).from;
-					const end = this.view.state.doc.lineAt(this.resizeData.position).to;
-
-					this.view.dispatch({
-						changes: { from: start, to: end, insert: newMarkdown }
-					});
-				} else if (markdown.length) {
-					console.error(`Selected markdown >${markdown}< is not an image`);
-				} else {
-					console.log('Markdown empty 🙀');
-				}
+				this.view.dispatch({
+					changes: { from: start, to: end, insert: newMarkdown }
+				});
 
 				document.body.style.cursor = "auto";
 				this.resizeData = null;
