@@ -1,6 +1,6 @@
 import { Plugin } from 'obsidian';
-
 import { EditorView, ViewPlugin } from '@codemirror/view';
+import { isImageMarkdown, replaceWidthInImageMarkdown } from './utils';
 
 const imageEdgeMargin = 50;
 
@@ -17,13 +17,21 @@ export default class MyPlugin extends Plugin {
 
 			resizeData: ResizeData | null;
 
+			mouseDownHandler: (event: MouseEvent) => void;
+			mouseMoveHandler: (event: MouseEvent) => void;
+			mouseUpHandler: (event: MouseEvent) => void;
+
 			constructor(view: EditorView) {
 				this.view = view;
 				this.resizeData = null;
 
-				view.dom.addEventListener('mousedown', this.handleMouseDown.bind(this));
-				view.dom.addEventListener('mousemove', this.handleMouseMove.bind(this));
-				view.dom.addEventListener('mouseup', this.handleMouseUp.bind(this));
+				this.mouseDownHandler = this.handleMouseDown.bind(this)
+				this.mouseMoveHandler = this.handleMouseMove.bind(this);
+				this.mouseUpHandler = this.handleMouseUp.bind(this);
+
+				view.dom.addEventListener('mousedown', this.mouseDownHandler);
+				view.dom.addEventListener('mousemove', this.mouseMoveHandler);
+				view.dom.addEventListener('mouseup', this.mouseUpHandler);
 			}
 
 			findImageForResizing(event: MouseEvent): HTMLImageElement | undefined {
@@ -97,6 +105,7 @@ export default class MyPlugin extends Plugin {
 				}
 
 				const markdown = markdownLine.text;
+
 				if (isImageMarkdown(markdown)) {
 					const newMarkdown = replaceWidthInImageMarkdown(markdown, this.resizeData.newWidth);
 					const start = this.view.state.doc.lineAt(this.resizeData.position).from;
@@ -105,8 +114,10 @@ export default class MyPlugin extends Plugin {
 					this.view.dispatch({
 						changes: { from: start, to: end, insert: newMarkdown }
 					});
+				} else if (markdown.length) {
+					console.error(`Selected markdown >${markdown}< is not an image`);
 				} else {
-					console.error(`Selected markdown ${markdown} is not an image`);
+					console.log('Markdown empty 🙀');
 				}
 
 				document.body.style.cursor = "auto";
@@ -115,8 +126,9 @@ export default class MyPlugin extends Plugin {
 			}
 
 			destroy() {
-				// TODO cleanup
-				// this.view.dom.removeEventListener('click', this.handleClick);
+				this.view.dom.removeEventListener('mousedown', this.mouseDownHandler);
+				this.view.dom.removeEventListener('mousemove', this.mouseMoveHandler);
+				this.view.dom.removeEventListener('mouseup', this.mouseUpHandler);
 			}
 		});
 
@@ -126,7 +138,6 @@ export default class MyPlugin extends Plugin {
 
 
 // TODO class
-// TODO show on hover
 
 const handleBarId = 'image-resize-handlebar';
 
@@ -135,10 +146,11 @@ function createHandleBar(image: HTMLImageElement) {
 	handleBar.id = handleBarId;
 
 	handleBar.style.position = 'absolute';
-	handleBar.style.width = '3px';
+	handleBar.style.width = '5px';
 	handleBar.style.backgroundColor = `rgba(255, 255, 255, 0.6)`;
 	handleBar.style.borderRadius = '4px';
 	handleBar.style.pointerEvents = 'none';
+	handleBar.style.border = '1px solid rgba(0, 0, 0, 0.5)';
 
 	document.body.appendChild(handleBar);
 
@@ -172,28 +184,3 @@ function resetCursor() {
 	document.body.style.cursor = "auto";
 }
 
-function replaceWidthInImageMarkdown(markdown: string, width: number): string {
-	// Regular expression to match the image syntax
-	const pattern = /!\[\[(.*?)(?: \| \d+)?\]\]/g;
-
-	// Replacement function to add or replace the width attribute
-	const replaceWidth = (match: string, p1: string): string => {
-		return `![[${p1} | ${width}]]`;
-	};
-
-	// Replace all occurrences in the markdown string
-	const modifiedMarkdown = markdown.replace(pattern, replaceWidth);
-
-	return modifiedMarkdown;
-}
-
-
-function isImageMarkdown(markdown: string): boolean {
-	// TODO improve 
-
-	// Regular expression to match the image syntax
-	const pattern = /^!\[\[.*?\]\]$/;
-
-	// Test if the markdown matches the pattern
-	return pattern.test(markdown);
-}
