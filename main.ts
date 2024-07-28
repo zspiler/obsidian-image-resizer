@@ -46,17 +46,6 @@ export default class MyPlugin extends Plugin {
 				}) as HTMLImageElement | undefined
 			}
 
-			findMarkdownAtPosition(pos: number): string | null {
-				let line;
-				try {
-					line = this.view.state.doc.lineAt(pos) // NOTE when image resized to small size, throws range error?	
-					return line.text;
-				} catch (error) {
-					console.error(`Error getting markdown at position ${pos}: `, error);
-					return null
-				}
-			}
-
 			handleMouseDown = (event: MouseEvent) => {
 				event.preventDefault()
 				event.stopPropagation();
@@ -67,12 +56,12 @@ export default class MyPlugin extends Plugin {
 				}
 
 
-				const findImageForResizing = this.findImageForResizing(event);
-				if (!findImageForResizing) {
+				const targetImage = this.findImageForResizing(event);
+				if (!targetImage) {
 					return
 				}
 
-				const markdown = this.findMarkdownAtPosition(pos);
+				const markdown = this.view.state.doc.lineAt(pos)?.text;
 				if (!markdown || !isImageWikilink(markdown) && !isImageMarkdown(markdown)) {
 					return
 				}
@@ -81,40 +70,60 @@ export default class MyPlugin extends Plugin {
 					? convertMarkdownToWikilink(markdown)
 					: markdown
 
-				const imageRect = findImageForResizing.getBoundingClientRect();
-				createHandleBar(findImageForResizing);
+				const imageRect = targetImage.getBoundingClientRect();
+				createHandleBar(targetImage);
 				this.resizeData = {
 					position: pos,
 					newWidth: Math.floor(imageRect.width),
-					element: findImageForResizing,
+					element: targetImage,
 					markdown: wikilinkMarkdown,
 				};
 			};
 
 			handleMouseMove(event: MouseEvent) {
 				if (this.resizeData) {
-					const imageRect = this.resizeData.element.getBoundingClientRect();
-					const newWidth = Math.max(0, Math.floor(event.clientX - imageRect.left));
-
-					this.resizeData.newWidth = newWidth;
-					this.resizeData.element.style.width = `${newWidth}px`;
-
+					this.updateResizeData(event)
 					setCursorToResize()
-
 					updateHandleBar(this.resizeData.element);
 				} else {
-					const hoveredImageForResizing = this.findImageForResizing(event);
-					if (hoveredImageForResizing) {
-						setCursorToResize()
-						createHandleBar(hoveredImageForResizing);
-					} else {
-						resetCursor()
-						removeHandleBar();
-					}
+					this.handleHoverState(event)
 				}
 			}
 
+			updateResizeData(event: MouseEvent) {
+				if (!this.resizeData) {
+					return
+				}
+
+				const imageRect = this.resizeData.element.getBoundingClientRect();
+				const newWidth = Math.max(0, Math.floor(event.clientX - imageRect.left));
+
+				this.resizeData.newWidth = newWidth;
+				this.resizeData.element.style.width = `${newWidth}px`;
+			}
+
+			handleHoverState(event: MouseEvent) {
+				const hoveredImageForResizing = this.findImageForResizing(event);
+				if (hoveredImageForResizing) {
+					setCursorToResize()
+					createHandleBar(hoveredImageForResizing);
+				} else {
+					resetCursor()
+					removeHandleBar();
+				}
+
+			}
+
 			handleMouseUp() {
+				if (!this.resizeData) {
+					return
+				}
+
+				this.updateMarkdown()
+				this.reset()
+			}
+
+			updateMarkdown() {
 				if (!this.resizeData) {
 					return
 				}
@@ -126,7 +135,9 @@ export default class MyPlugin extends Plugin {
 				this.view.dispatch({
 					changes: { from: start, to: end, insert: newMarkdown }
 				});
+			}
 
+			reset() {
 				document.body.style.cursor = "auto";
 				this.resizeData = null;
 				removeHandleBar();
