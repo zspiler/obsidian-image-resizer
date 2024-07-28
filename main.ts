@@ -1,6 +1,6 @@
 import { Plugin } from 'obsidian';
 import { EditorView, ViewPlugin } from '@codemirror/view';
-import { isImageWikilink, replaceWidthInImageWikilink } from './utils';
+import { isImageWikilink, replaceWidthInImageWikilink, isImageMarkdown, convertMarkdownToWikilink } from './utils';
 
 const imageEdgeMargin = 50;
 
@@ -73,9 +73,13 @@ export default class MyPlugin extends Plugin {
 				}
 
 				const markdown = this.findMarkdownAtPosition(pos);
-				if (!markdown || !isImageWikilink(markdown)) {
+				if (!markdown || !isImageWikilink(markdown) && !isImageMarkdown(markdown)) {
 					return
 				}
+
+				const wikilinkMarkdown = isImageMarkdown(markdown)
+					? convertMarkdownToWikilink(markdown)
+					: markdown
 
 				const imageRect = findImageForResizing.getBoundingClientRect();
 				createHandleBar(findImageForResizing);
@@ -83,7 +87,7 @@ export default class MyPlugin extends Plugin {
 					position: pos,
 					newWidth: Math.floor(imageRect.width),
 					element: findImageForResizing,
-					markdown,
+					markdown: wikilinkMarkdown,
 				};
 			};
 
